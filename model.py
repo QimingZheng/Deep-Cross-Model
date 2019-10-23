@@ -18,7 +18,7 @@
 import mxnet as mx
 
 
-def deep_cross_model(batch_size, num_embed_features, input_dims, hidden_units):
+def deep_cross_model(batch_size, num_embed_features, input_dims, hidden_units, cross_layer=3):
     label = mx.symbol.Variable("softmax_label", shape=(batch_size,))
 
     dns_data = mx.symbol.Variable("dns_data", shape=(batch_size, num_embed_features))
@@ -34,36 +34,22 @@ def deep_cross_model(batch_size, num_embed_features, input_dims, hidden_units):
                         input_dim=input_dims[i], output_dim=hidden_units[0], sparse_grad=True))
     concated_input = mx.symbol.concat(*features, dim=1)
     # cross model
+    cross_hidden = concated_input
     weight_dim = hidden_units[0]*num_embed_features
-    weight = mx.symbol.Variable('cross_weight_0', shape=(weight_dim, 1), stype='default',
-            init = mx.initializer.Normal(sigma=0.01))
-    bias = mx.symbol.Variable('cross_bias_0', shape=(weight_dim), stype='default',
-            init = mx.initializer.Normal(sigma=0.01))
-    cross_hidden = mx.symbol.broadcast_add(mx.symbol.broadcast_mul(concated_input,
-                        mx.symbol.dot(concated_input,
-                        weight)), bias) + concated_input
-    weight = mx.symbol.Variable('cross_weight_1', shape=(weight_dim, 1), stype='default',
-            init = mx.initializer.Normal(sigma=0.01))
-    bias = mx.symbol.Variable('cross_bias_1', shape=(weight_dim), stype='default',
-            init = mx.initializer.Normal(sigma=0.01))
-    cross_hidden = mx.symbol.broadcast_add(mx.symbol.broadcast_mul(concated_input,
-                        mx.symbol.dot(cross_hidden,
-                        weight)), bias) + cross_hidden
-    weight = mx.symbol.Variable('cross_weight_2', shape=(weight_dim, 1), stype='default',
-            init = mx.initializer.Normal(sigma=0.01))
-    bias = mx.symbol.Variable('cross_bias_2', shape=(weight_dim), stype='default',
-            init = mx.initializer.Normal(sigma=0.01))
-    cross_hidden = mx.symbol.broadcast_add(mx.symbol.broadcast_mul(concated_input,
-                        mx.symbol.dot(cross_hidden,
-                        weight)), bias) + cross_hidden
+    for i in range(cross_layer):
+        weight = mx.symbol.Variable('cross_weight_%d'%i, shape=(weight_dim, 1), stype='default',
+                init = mx.initializer.Normal(sigma=0.01))
+        bias = mx.symbol.Variable('cross_bias_%d'%i, shape=(weight_dim), stype='default',
+                init = mx.initializer.Normal(sigma=0.01))
+        cross_hidden = mx.symbol.broadcast_add(mx.symbol.broadcast_mul(concated_input,
+                            mx.symbol.dot(cross_hidden,
+                            weight)), bias) + cross_hidden
     # deep model
     hidden = mx.symbol.FullyConnected(data=concated_input, num_hidden=hidden_units[1])
     hidden = mx.symbol.Activation(data=hidden, act_type='relu')
-    hidden = mx.symbol.FullyConnected(data=hidden, num_hidden=hidden_units[2])
-    hidden = mx.symbol.Activation(data=hidden, act_type='relu')
-    hidden = mx.symbol.FullyConnected(data=hidden, num_hidden=hidden_units[3])
-    hidden = mx.symbol.Activation(data=hidden, act_type='relu')
-    hidden = mx.symbol.FullyConnected(data=hidden, num_hidden=hidden_units[4])
+    for i in range(2, len(hidden_units)):
+        hidden = mx.symbol.FullyConnected(data=hidden, num_hidden=hidden_units[i])
+        hidden = mx.symbol.Activation(data=hidden, act_type='relu')
     cross_deep_hidden = mx.symbol.concat(hidden, cross_hidden, dim=1)
     cross_deep_hidden = mx.symbol.Activation(data=cross_deep_hidden, act_type='relu')
     cross_deep_out = mx.symbol.FullyConnected(data=cross_deep_hidden, num_hidden=2)
